@@ -38,23 +38,28 @@ int main () {
 	//waitting after call accept until one request comes
 	struct sockaddr_in peer_addr;
 	socklen_t peer_addr_len = sizeof(peer_addr);
-	int cfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_len);
-	if (cfd == -1) 
-		handle_error("accept");
 
-	char buf[1024];
-	while (1) {
-		int recv_len = recv(cfd, buf, sizeof(buf), 0);
-		buf[recv_len] = '\0';
-		printf("%s", buf);
-		int send_len = send(cfd, buf, recv_len, 0);
-		if (strncmp(buf, "quit", recv_len - 1) == 0) {
-			break;
+	for (int i = 0; i < 3; ++ i) {
+
+		int cfd = accept(sfd, (struct sockaddr *) &peer_addr, &peer_addr_len);
+		if (cfd == -1) 
+			handle_error("accept");
+
+		while (1) {
+			char buf[1024];
+			int recv_len = recv(cfd, buf, sizeof(buf), 0);
+			buf[recv_len] = '\0';
+			printf("%s", buf);
+			int send_len = send(cfd, buf, recv_len, 0);
+			if (strncmp(buf, "quit", recv_len - 1) == 0) {
+				break;
+			}
 		}
+		close(cfd);
+
 	}
 
 	close(sfd);
-	close(cfd);
 
 	return 0;
 }
