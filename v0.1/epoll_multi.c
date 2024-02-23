@@ -60,7 +60,7 @@ void * handler_read(void *arg) {
 	//if (epoll_ctl(epollfd, EPOLL_CTL_DEL, cfd, NULL) == -1) 
 	//	handle_error("epoll_ctl");
 	close(cfd);
-	free((*argv)[0]);
+	//free((*argv)[0]);
 }
 
 int main (int argc, char*argv[]) {

@@ -5,7 +5,10 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
+
 #define MAX_EVENTS 10
+#define BASE_ECHO_FD 5
+#define MAX_ECHO_NUM BASE_ECHO_FD + 10
 
 static void delfd(int epollfd, int fd);
 static void addfd(int epollfd, int fd);
@@ -121,6 +124,7 @@ void processpool<T>::run_parent() {
 	assert(epollfd != -1);
 	struct epoll_event events[MAX_EVENTS];
 	addfd(epollfd, m_sfd);
+	unsigned int count = 0;
 	//init event
 	do {
 		std::cout << "flag" << std::endl;
@@ -128,7 +132,8 @@ void processpool<T>::run_parent() {
 		assert(nfds != -1);
 		for (int i = 0; i < nfds; ++ i) {
 			//awaken child process
-			write(sub_processes[i].pro_pipe[1], "accept", 6);
+			write(sub_processes[count % m_num_process].pro_pipe[1], "accept", 6);
+			++ count;
 		}
 	} while(1);
 
@@ -138,7 +143,8 @@ template <typename T>
 void processpool<T>::run_child() {
 
 
-	//int has
+	T echo_list[MAX_ECHO_NUM];
+	
 
 	int epollfd = epoll_create1(0);
 	assert(epollfd != -1);
@@ -151,7 +157,7 @@ void processpool<T>::run_child() {
 	//init event
 	do {
 		++ count;
-		std::cout << "flag child" << count % 10 << std::endl;
+		std::cout << idx << " : flag child" << count % 10 << std::endl;
 		int nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
 		assert(nfds != -1);
 		for (int i = 0; i < nfds; ++ i) {
@@ -159,40 +165,44 @@ void processpool<T>::run_child() {
 				//clear buffer of pipe
 				read(in_fd, buf, 6);
 
-				//<T>
 
 				//accept link request
 				struct sockaddr_in peer_addr;
 				socklen_t peer_addr_len = sizeof(peer_addr);
 				int cfd = accept(m_sfd, (struct sockaddr*) &peer_addr, &peer_addr_len);
+				//std::cout << cfd << std::endl;
 				addfd(epollfd, cfd);
+				echo_list[cfd].set(epollfd, cfd);
 				//accept();
 
-				//<T>
 				
 			}else {
-				while (1) {
-					int ret_len = recv(events[i].data.fd, buf, 255, 0);
-					if (ret_len == 0) {
-						//unlink
-						delfd(epollfd, events[i].data.fd);
-						break;
-					} else if (ret_len > 0) {
-						buf[ret_len] = '\0';
-						printf("%s", buf);
-					} else if (ret_len == -1) {
-						if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-					}
-				}
+				//std::cout << "idx = " << idx << std::endl;
+				echo_list[events[i].data.fd].run();
+
+				//while (1) {
+				//	int ret_len = recv(events[i].data.fd, buf, 255, 0);
+				//	if (ret_len == 0) {
+				//		//unlink
+				//		delfd(epollfd, events[i].data.fd);
+				//		break;
+				//	} else if (ret_len > 0) {
+				//		buf[ret_len] = '\0';
+				//		printf("%s", buf);
+				//	} else if (ret_len == -1) {
+				//		if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+				//	}
+				//}
 			}
 		}
 	} while(1);
 
 }
 
-static void delfd(int epollfd, int fd) {
-	assert(epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) != -1);
-}
+//static void delfd(int epollfd, int fd) {
+//	assert(epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) != -1);
+//	close(fd);
+//}
 
 static void addfd(int epollfd, int fd) {
 	struct epoll_event ev;

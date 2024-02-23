@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 
 #include "processpool.h"
+#include "echo.h"
 
 
 #define handle_error(msg) \
@@ -19,6 +20,15 @@
 
 #define MAX_LISTEN_QUEUE 10
 #define MAX_PROCESS_NUM 4
+
+/*
+ *
+ *主线程监视listen fd， 将请求信号通过管道发送给子进程，只作监视和提醒子进程的作用
+ *子进程初始监视与主进程连接的管道，根据就绪套接字确定执行accept或者run操作， 
+ *
+*/
+
+
 int main(int argc, char *argv[]) {
 	int port = 9006;
 	if (argc == 2) {
@@ -42,7 +52,7 @@ int main(int argc, char *argv[]) {
 	assert(listen(sfd, MAX_LISTEN_QUEUE) != -1);
 	std::cout << "Listening ......" << std::endl;
 
-	processpool<int> *pool = processpool<int>::create(sfd, MAX_PROCESS_NUM); //listen fd; the number of processs;
+	processpool<echo> *pool = processpool<echo>::create(sfd, MAX_PROCESS_NUM); //listen fd; the number of processs;
 	pool->run();
 	//processpool<echo> *pool = processpool<echo>::create(sfd, 8); //listen fd; the number of processs;
 	//pool->run;
