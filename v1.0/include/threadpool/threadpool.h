@@ -53,7 +53,7 @@ Threadpool<T>::Threadpool(int thread_num, int max_list) : m_thread_num(thread_nu
 			assert(0);
 		}
 	}
-	std::cout << "finish init pool now." << std::endl;
+	//std::cout << "finish init pool now." << std::endl;
 }
 
 template <typename T>
