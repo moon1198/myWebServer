@@ -4,6 +4,7 @@
 #include "../lock/locker.h"
 #include <list>
 #include <exception>
+#include <iostream>
 #include <pthread.h>
 
 
@@ -74,6 +75,7 @@ void *Threadpool<T>::worker(void *arg) {
 
 template <typename T>
 bool Threadpool<T>::push(T *task) {
+	std::cout << "push in task  " << task->m_fd << std::endl;
 	m_locker.lock();
 	//若超出队列长度，舍弃任务，
 	if (m_queue.size() >= m_max_list) {
@@ -91,6 +93,7 @@ T *Threadpool<T>::pop() {
 	m_sem.wait();
 	m_locker.lock();
 	T *task = m_queue.front();
+	std::cout << "pop out task  " << task->m_fd << std::endl;
 	m_queue.pop_front();
 	m_locker.unlock();
 	return task;
