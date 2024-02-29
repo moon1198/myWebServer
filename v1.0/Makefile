@@ -1,3 +1,18 @@
-%! /bin/bash
 
-g++ -o server -Iinclude webserver.cpp main.cpp http_client.cpp -lpthread -g
+.DEFAULT_GOAL = app
+#g++ -o server -Iinclude webserver.cpp main.cpp http_client.cpp -lpthread -g
+CXX = g++
+CXXFLAGS += -g
+CXXFLAGS += -lpthread
+
+SRC = *.cpp
+INC_PATH := ./include
+INCLUDES = $(addprefix -I, $(INC_PATH))
+
+CXXFLAGS := -Wall -Werror $(INCLUDES) $(CXXFLAGS) 
+
+.PHONY: app
+
+app: 
+	$(CXX) -o server $(SRC) $(CXXFLAGS) 
+

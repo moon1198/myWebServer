@@ -21,7 +21,8 @@ public:
 private:
 	int m_thread_num;			//the thread_num of threadpool
 	pthread_t *m_threads;		//the array of threads
-	int m_max_list;				//the max size of requests
+	//std::size_t m_max_list;				//the max size of requests
+	typename std::list<T *>::size_type m_max_list;		//the queue of requests
 	std::list<T *> m_queue;		//the queue of requests
 	Locker m_locker;				//locker
 	Sem m_sem;					
@@ -35,7 +36,7 @@ private:
 };
 
 template <typename T>
-Threadpool<T>::Threadpool(int thread_num, int max_list) : m_thread_num(thread_num), m_max_list(max_list), m_threads(NULL) {
+Threadpool<T>::Threadpool(int thread_num, int max_list) : m_thread_num(thread_num), m_threads(NULL), m_max_list(max_list) {
 	if (m_thread_num <= 0 || m_max_list <= 0) 
 		throw std::exception();
 

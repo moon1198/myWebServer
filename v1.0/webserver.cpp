@@ -42,7 +42,11 @@ void WebServer::event_listen() {
 	memset(&my_addr, 0, sizeof(my_addr));
 	my_addr.sin_family = AF_INET;
 	my_addr.sin_port = htons(m_port);
-	inet_aton("127.0.0.1", &my_addr.sin_addr);
+	my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	//
+	//inet_aton("121.196.245.213", &my_addr.sin_addr);
+	//inet_pton(AF_INET, "121.196.245.213", &my_addr.sin_addr);
+	//inet_aton("127.0.0.1", &my_addr.sin_addr);
 	//sockaddr_t addr_len= sizeof();
 
 	ret = bind(m_lisfd, (const struct sockaddr *) &my_addr, sizeof(my_addr)); 
