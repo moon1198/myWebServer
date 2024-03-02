@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -14,12 +15,26 @@
 
 #include <iostream>
 
+//定义http响应的一些状态信息
+static const char *ok_200_title = "OK";
+
+static const char *error_400_title = "Bad Request";
+static const char *error_400_form = "Your request has bad syntax or is inherently impossible to staisfy.\n";
+static const char *error_403_title = "Forbidden";
+static const char *error_403_form = "You do not have permission to get file form this server.\n";
+static const char *error_404_title = "Not Found";
+static const char *error_404_form = "The requested file was not found on this server.\n";
+static const char *error_500_title = "Internal Error";
+static const char *error_500_form = "There was an unusual problem serving the request file.\n";
+
+
 int Http_client::m_epollfd = -1;
 int Http_client::m_user_num = 0;
 
 void modfd(int epollfd, int m_fd, int ev, bool one_shot);
 void setnonblock(int fd);
 void addfd(int epollfd, int fd, bool one_shot);
+void delfd(int epollfd, int fd);
 
 void Http_client::init(int fd, const struct sockaddr_in *peer_addr) {
 	assert(getcwd(m_root_path, 256) != NULL);
@@ -38,6 +53,7 @@ void Http_client::refresh() {
 	m_host = NULL;
 	m_content_len = 0;
 	m_connect = NULL;
+	m_linger = false;
 	m_content = NULL;
 	m_file_address = NULL;
 
@@ -48,6 +64,9 @@ void Http_client::refresh() {
 	memset(m_writebuf, 0, WRITE_BUF_LEN);
 	m_read_idx = 0;
 	m_write_idx = 0;
+	m_iov_count = 0;
+	bytes_to_write = 0;
+	bytes_have_write = 0;
 }
 
 void Http_client::new_user(int fd, const struct sockaddr_in *peer_addr) {
@@ -57,8 +76,17 @@ void Http_client::new_user(int fd, const struct sockaddr_in *peer_addr) {
 
 void Http_client::run() {
 	//strncpy(m_writebuf, m_readbuf, m_read_idx);
-	parse_readbuf();
-	fill_writebuf();
+	Http_client::HTTP_CODE parse_ret = parse_readbuf();
+	if (parse_ret == NO_REQUEST) {
+		modfd(m_epollfd, m_fd, EPOLLIN, true);
+		return ;
+	}
+
+	if (!fill_writebuf(parse_ret)) {
+		//writebuf full out
+		close_conn();
+		return ;
+	}
 
 	modfd(m_epollfd, m_fd, EPOLLOUT, true);
 }
@@ -88,26 +116,51 @@ bool Http_client::Read() {
 }
 
 bool Http_client::Write() {
-	//while(1) {
-	//	int len = write(m_fd, m_writebuf + m_write_idx, WRITE_BUF_LEN);
-	//	if (len == -1) {
-	//		//all have been write
-	//		if (errno & (EAGAIN | EWOULDBLOCK)) {
-	//			break;
-	//		}
-	//		//error disappear
-	//		return false;
-	//		break;
-	//	} else {
-	//		m_write_idx += len;
-	//	}
-	//}
 
-	////连续echo
-	//modfd(m_epollfd, m_fd, EPOLLIN, true);
-	//refresh();
+	if (bytes_to_write == 0) {
 
-	printf("%s", m_file_address);
+	}
+
+	while (1) {
+		int len = writev(m_fd, write_iov, m_iov_count);
+		if (len < 0) {
+			//输出再次阻塞
+			if (errno & EAGAIN || errno & EWOULDBLOCK) {
+				modfd(m_epollfd, m_fd, EPOLLOUT, true);
+				return true;
+			}
+			//how to handle after return false
+			//close connection or not
+			return false;
+		}
+
+		if (static_cast<size_t>(len) < write_iov[0].iov_len) {
+			write_iov[0].iov_len -= len;
+			write_iov[0].iov_base = (char* ) write_iov[0].iov_base + len;
+		} else if (static_cast<size_t>(len) >= write_iov[0].iov_len) {
+			write_iov[1].iov_len -= len - write_iov[0].iov_len;
+			write_iov[1].iov_base = (char* ) write_iov[1].iov_base + (len - write_iov[0].iov_len);
+			write_iov[0].iov_len = 0;
+		}
+
+		bytes_have_write += len;
+		if (bytes_have_write >= bytes_to_write) {
+			break;
+			//return true;
+		}
+	}
+
+	unmap();
+
+	if (m_linger) {
+		//连续echo
+		modfd(m_epollfd, m_fd, EPOLLIN, true);
+		refresh();
+	} else {
+		return false;
+	}
+
+	//printf("%s", m_file_address);
 	return true;
 }
 
@@ -128,8 +181,8 @@ Http_client::HTTP_CODE Http_client::parse_readbuf() {
 				if (ret == BAD_REQUEST) {
 					return BAD_REQUEST;
 				} else if (ret == GET_REQUEST) {
-					handle_request();
-					return GET_REQUEST;
+					return handle_request();
+					//return GET_REQUEST;
 				}
 				break;
 			case CHECK_STATE_CONTENT :
@@ -138,11 +191,12 @@ Http_client::HTTP_CODE Http_client::parse_readbuf() {
 				if (ret == BAD_REQUEST) {
 					return BAD_REQUEST;
 				} else if (ret == GET_REQUEST) {
-					handle_request();
-					return GET_REQUEST;
+					return handle_request();
+					//return GET_REQUEST;
 				}
 				break;
 			default :
+				return INTERNAL_ERROR;
 				//error
 				break;
 		}
@@ -150,7 +204,64 @@ Http_client::HTTP_CODE Http_client::parse_readbuf() {
 	return NO_REQUEST;
 }
 
-bool Http_client::fill_writebuf() {
+bool Http_client::fill_writebuf(Http_client::HTTP_CODE request_state) {
+
+	switch (request_state) {
+	case BAD_REQUEST:
+		//error_400
+		add_status_line(400, error_400_title);
+		//input content-length
+		add_headers(strlen(error_400_form));
+		add_content(error_400_form);
+		break;
+	case NO_RESOURCE:
+		//error_404
+		add_status_line(404, error_404_title);
+		add_headers(strlen(error_404_form));
+		add_content(error_404_form);
+		break;
+	case FORBIDDEN_REQUEST:
+		//error_403
+		add_status_line(403, error_403_title);
+		add_headers(strlen(error_403_form));
+		add_content(error_403_form);
+		break;
+	case INTERNAL_ERROR:
+		//error_500
+		add_status_line(500, error_500_title);
+		add_headers(strlen(error_500_form));
+		add_content(error_500_form);
+		break;
+	case FILE_REQUEST:
+		//ok_200
+		add_status_line(200, ok_200_title);
+		break;
+	default:
+		//will be not reach here
+		break;
+	}
+	if (m_file_address) {
+		//have file should to be sent
+		if (m_file_stat.st_size != 0) {
+			add_headers(m_file_stat.st_size);
+			write_iov[0].iov_base = m_writebuf;
+			write_iov[0].iov_len = m_write_idx;
+			write_iov[1].iov_base = m_file_address;
+			write_iov[1].iov_len = m_file_stat.st_size;
+			bytes_to_write = write_iov[0].iov_len + write_iov[1].iov_len;
+			m_iov_count = 2;
+			return true;
+		} else {
+			const char* empty_file = "<html><body></body></html>";
+			add_headers(strlen(empty_file));
+			add_content(empty_file);
+		}
+	}
+
+	write_iov[0].iov_base = m_writebuf;
+	write_iov[0].iov_len = m_write_idx;
+	bytes_to_write = write_iov[0].iov_len;
+	m_iov_count = 1;
 
 	return true;
 }
@@ -244,6 +355,10 @@ Http_client::HTTP_CODE Http_client::parse_headers(char* line) {
 	} else if (strcasecmp(line, "Connection:") == 0) {
 		//strcpy(m_connect, tmp);
 		m_connect = tmp;
+		if (strcasecmp(m_connect, "keep-alive") == 0) {
+			m_linger = true;
+		}
+
 	} else if (strcasecmp(line, "Content-Length:") == 0) {
 		m_content_len = atoi(tmp);
 	} else {
@@ -312,4 +427,82 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	close(fd);
 	return FILE_REQUEST;
 
+}
+
+bool Http_client::add_status_line(int http_code, const char* msg) {
+	if (add_response("HTTP/1.1 %d %s\r\n", http_code, msg) == -1) {
+		return false;
+	}
+	return true;
+}
+
+bool Http_client::add_headers(int length) {
+	return add_content_length(length) && add_content_type() && add_linger() &&  add_blank_line();
+}
+
+bool Http_client::add_content_length(int length) {
+	if (add_response("Content-Length: %d\r\n", length) == -1) {
+		return false;
+	}
+	return true;
+}
+
+bool Http_client::add_content_type() {
+	if (add_response("Content-Type: %s\r\n", "text/html") == -1) {
+		return false;
+	}
+	return true;
+}
+
+bool Http_client::add_linger() {
+	if (add_response("Connection: %s\r\n", m_connect) == -1) {
+		return false;
+	}
+	return true;
+}
+
+bool Http_client::add_blank_line() {
+	if (add_response("\r\n") == -1) {
+		return false;
+	}
+	return true;
+}
+
+
+bool Http_client::add_content(const char* msg) {
+	if (add_response("%s", msg) == -1) {
+		return false;
+	}
+	return true;
+}
+
+
+int Http_client::add_response(const char* format, ...) {
+	//the buf is full
+	if (m_write_idx >= WRITE_BUF_LEN) {
+		return false;
+	}
+	va_list arg_list;
+	va_start(arg_list, format);
+	int len = vsnprintf(m_writebuf + m_write_idx, WRITE_BUF_LEN - m_write_idx - 1, format, arg_list);
+	if (len >= WRITE_BUF_LEN - m_write_idx - 1) {
+		va_end(arg_list);
+		return -1;
+	}
+	m_write_idx += len;
+	va_end(arg_list);
+
+	return len;
+}
+
+void Http_client::unmap() {
+	if (m_file_address) {
+		munmap(m_file_address, m_file_stat.st_size);
+		m_file_address = 0;
+	}
+}
+
+void Http_client::close_conn() {
+	delfd(m_epollfd, m_fd);
+	close(m_fd);
 }

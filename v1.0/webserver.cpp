@@ -73,8 +73,8 @@ void WebServer::event_loop() {
 
 		for (int i = 0; i < event_num; ++ i) {
 			int sockfd = events[i].data.fd;
-			std::cout << "sockfd = " << sockfd << std::endl;
-			std::cout << "events[i].events = " << events[i].events << std::endl;
+			//std::cout << "sockfd = " << sockfd << std::endl;
+			//std::cout << "events[i].events = " << events[i].events << std::endl;
 
 			//new connection request
 			if (sockfd == m_lisfd) {
@@ -101,7 +101,9 @@ void WebServer::event_loop() {
 			if (events[i].events & EPOLLOUT) {
 				std::cout << "write....." << std::endl;
 
-				users[sockfd].Write();
+				if (!users[sockfd].Write()) {
+					users[sockfd].close_conn();
+				}
 				continue;
 			}
 		}
@@ -126,6 +128,10 @@ void addfd(int epollfd, int fd, bool one_shot) {
 		ev.events |= EPOLLONESHOT;
 	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev);
 	setnonblock(fd);
+}
+
+void delfd(int epollfd, int fd) {
+	epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
 }
 
 void modfd(int epollfd, int fd, int mode, bool one_shot) {
