@@ -384,7 +384,8 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	strcpy(m_file, m_root_path);
 	strcat(m_file, "/root");
 	if (strlen(m_url) == 1 && m_url[0] == '/') {
-		strcat(m_file, "/judge.html");
+		//strcat(m_file, "/judge.html");
+		strcat(m_file, "/index.html");
 	} else {
 		switch (*(m_url + 1)) {
 		case '0':
