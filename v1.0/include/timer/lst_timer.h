@@ -9,12 +9,15 @@
 
 
 class Timer_lst;
+class Timer;
 
 class client_data
 {
 public:
 	struct sockaddr_in addr;
 	int m_sockfd;
+	int m_epollfd;
+	Timer* timer;
 };
 
 class Timer
@@ -29,7 +32,7 @@ public:
 	void (* cb_func)(client_data*); 
 	
 public:
-	client_data data;
+	client_data* data;
 	time_t expire;
 	Timer* prev;
 	Timer* next;

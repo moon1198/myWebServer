@@ -9,9 +9,9 @@
 void setnonblock(int fd);
 void addfd(int epollfd, int fd, bool one_shot);
 
-int WebServer::m_pipeout = -1;
+int* WebServer::m_pipeio = 0;
 
-WebServer::WebServer() : m_threadpool(NULL), users(NULL), m_timer_lst(NULL) {
+WebServer::WebServer() : m_threadpool(NULL), users(NULL), m_timer_lst(NULL), m_timer_data(NULL) {
 
 }
 
@@ -20,10 +20,15 @@ WebServer::~WebServer() {
 		delete m_threadpool;
 	}
 	if (users != NULL) {
-		delete users;
+		//delete 使用错误，导致munmap_chunk()-->invaild pointer
+		//delete users;
+		delete[] users;
 	}
 	if (m_timer_lst != NULL) {
 		delete m_timer_lst;
+	}
+	if (m_timer_data != NULL) {
+		delete[] m_timer_data;
 	}
 }
 
@@ -33,6 +38,7 @@ void WebServer::init(int port = 9006, int thread_num = 8) {
 }
 
 void WebServer::timer_lst_init() {
+	m_timer_data = new client_data[MAX_FD];
 	m_timer_lst = new Timer_lst;
 }
 
@@ -74,18 +80,29 @@ void WebServer::event_listen() {
 	assert(ret != -1);
 	setnonblock(m_pipefd[1]);
 	addfd(m_epollfd, m_pipefd[0], false);
-	WebServer::m_pipeout = m_pipefd[0];
+	WebServer::m_pipeio = m_pipefd;
 
-	struct sigaction act;
-	memset(&act, 0, sizeof(act));
-	act.sa_handler = sig_handler;
-	sigfillset(&act.sa_mask);
-	ret = sigaction(SIGALRM, &act, NULL);
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = sig_handler;
+	sa.sa_flags |= SA_RESTART;
+	sigfillset(&sa.sa_mask);
+	ret = sigaction(SIGALRM, &sa, NULL);
 	assert(ret != -1);
-	ret = sigaction(SIGTERM, &act, NULL);
+	//memset(&sa, 0, sizeof(sa));
+	//sa.sa_handler = sig_handler;
+	//sigfillset(&sa.sa_mask);
+	ret = sigaction(SIGTERM, &sa, NULL);
 	assert(ret != -1);
 
-	//alarm(TIMESLOT);
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags |= SA_RESTART;
+	sigfillset(&sa.sa_mask);
+	ret = sigaction(SIGPIPE, &sa, NULL);
+	assert(ret != -1);
+
+	alarm(TIMESLOT);
 
 
 }
@@ -97,11 +114,17 @@ void WebServer::event_loop() {
 	epoll_event events[MAX_EVENT_NUM];
 
 	while (!terminate) {
-		std::cout << "listen..." << std::endl;
+		//std::cout << "listen..." << std::endl;
 		int event_num = epoll_wait(m_epollfd, events, MAX_EVENT_NUM, -1);
-		std::cout << "errno = " << errno << std::endl;
-		std::cout << "event_num = " << event_num << std::endl;
-		assert(event_num >= 0);
+
+		//alarm 使epoll_wait return -1
+		if (event_num == -1) {
+			if (errno == EINTR) {
+				continue;
+			} else {
+				assert(0);
+			}
+		}
 
 		for (int i = 0; i < event_num; ++ i) {
 			int sockfd = events[i].data.fd;
@@ -131,15 +154,31 @@ void WebServer::event_loop() {
 			else if (events[i].events & EPOLLIN) {
 				if (users[sockfd].Read()) {
 					m_threadpool->push(&users[sockfd]);
+
+					//prolong expire
+					prolong_timer(m_timer_data[sockfd].timer);
+
+				} else {
+					//timer 主动断开连接
+					timer_deal_err(m_timer_data[sockfd].timer);
+					m_timer_data[sockfd].timer = NULL;
+
 				}
 				continue;
 			}
 
 			else if (events[i].events & EPOLLOUT) {
-				std::cout << "write....." << std::endl;
+				//std::cout << "write....." << std::endl;
 
-				if (!users[sockfd].Write()) {
+				if (users[sockfd].Write()) {
 					users[sockfd].close_conn();
+					//prolong expire
+					prolong_timer(m_timer_data[sockfd].timer);
+
+				} else {
+				//timer 主动断开连接
+					timer_deal_err(m_timer_data[sockfd].timer);
+					m_timer_data[sockfd].timer = NULL;
 				}
 				continue;
 			}
@@ -163,16 +202,19 @@ void addfd(int epollfd, int fd, bool one_shot) {
 	ev.data.fd = fd;
 	//edge triggle and half-close
 	ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+	//ev.events = EPOLLIN | EPOLLRDHUP;
 	//触发一次事件通知后，该描述符将disable，无法收到事件通知，需要再一次修改ev.events
 	//可避免竞态
 	if (one_shot) 
 		ev.events |= EPOLLONESHOT;
+	//std::cout << "connect fd = " << fd << std::endl;
 	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev);
 	setnonblock(fd);
 }
 
 void delfd(int epollfd, int fd) {
 	epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
+	//std::cout << "close fd = " << fd << std::endl;
 }
 
 void modfd(int epollfd, int fd, int mode, bool one_shot) {
@@ -190,7 +232,8 @@ void modfd(int epollfd, int fd, int mode, bool one_shot) {
 void WebServer::sig_handler (int sig) {
 	int prev_errno = errno;
 	int msg = sig;
-	send(WebServer::m_pipeout, (char *) &msg, 1, 0);
+	//std::cout << "sig = " << sig << std::endl;
+	send(WebServer::m_pipeio[1], (char *) &msg, 1, 0);
 	//send(1, (char *) &msg, 1, 0);
 	errno = prev_errno;
 }
@@ -222,8 +265,12 @@ void WebServer::timer_handler() {
 void WebServer::new_timer(int sockfd, struct sockaddr_in* addr) {
 	Timer* tmp_timer = new Timer();
 
-	tmp_timer->data.addr = *addr;
-	tmp_timer->data.m_sockfd = sockfd;
+	m_timer_data[sockfd].timer = tmp_timer;
+	tmp_timer->data = &m_timer_data[sockfd];
+
+	tmp_timer->data->addr = *addr;
+	tmp_timer->data->m_sockfd = sockfd;
+	tmp_timer->data->m_epollfd = m_epollfd;
 	tmp_timer->expire = time(NULL) + 3 * TIMESLOT;
 	tmp_timer->cb_func = cb_func;
 
@@ -232,7 +279,30 @@ void WebServer::new_timer(int sockfd, struct sockaddr_in* addr) {
 }
 
 void WebServer::cb_func(client_data* data) {
-
+	//close connection
+	//m_users_count --;
+	//delete listen 
+	//std::cout << "cb_func" << std::endl;
+	delfd(data->m_epollfd, data->m_sockfd);
+	close(data->m_sockfd);
+	-- Http_client::m_user_num;
 }
+
+void WebServer::prolong_timer(Timer* timer) {
+	time_t cur = time(NULL);
+	timer->expire = cur + 3 * TIMESLOT;
+	m_timer_lst->adjust_timer(timer);
+}
+
+void WebServer::timer_deal_err(Timer* timer) {
+	timer->cb_func(timer->data);
+	if (timer) {
+		m_timer_lst->del_timer(timer);
+	}
+}
+
+
+
+
 
 

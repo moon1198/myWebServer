@@ -13,12 +13,14 @@ Timer_lst::~Timer_lst() {
 }
 
 void Timer_lst::tick() {
-	std::cout << "tick" << std::endl;
+	//std::cout << "tick" << std::endl;
 	time_t cur_time = time(NULL);
 	Timer* tmp = head->next;
 	while (tmp != tail) {
 		if (tmp->expire <= cur_time) {
-			tmp->cb_func(&tmp->data);
+			tmp->cb_func(tmp->data);
+			del_timer(tmp);
+			tmp = tmp->next;
 		} else {
 			break;
 		}
@@ -67,7 +69,7 @@ void Timer_lst::add_timer(Timer* timer) {
 }
 
 void Timer_lst::del_timer(Timer* timer) {
-	if (!timer) {
+	if (!timer || timer == head || timer == tail) {
 		return ;
 	}
 	timer->prev->next = timer->next;
@@ -79,7 +81,8 @@ void Timer_lst::adjust_timer(Timer* timer) {
 	if (!timer) {
 		return ;
 	}
-	del_timer(timer);
+	timer->prev->next = timer->next;
+	timer->next->prev = timer->prev;
 	add_timer(timer);
 }
 

@@ -37,6 +37,8 @@ public:
 	void timer_handler();
 	void new_timer(int sockfd, struct sockaddr_in* addr);
 	static void cb_func(client_data* data);
+	void prolong_timer(Timer*);
+	void timer_deal_err(Timer*);
 
 
 public:
@@ -48,11 +50,12 @@ public:
 	int m_port;					//端口
 	int m_lisfd;
 	int m_pipefd[2];
-	static int m_pipeout;
+	static int* m_pipeio;
 	int m_epollfd;				//
 	Http_client *users;			//记录连接用户, 长度可设置为最大文件描述符，并以此做索引；
 	//定时器里也需要连接数据
 	Timer_lst* m_timer_lst;
+	client_data* m_timer_data;
 
 private:
 

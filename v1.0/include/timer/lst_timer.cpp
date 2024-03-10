@@ -18,7 +18,8 @@ void Timer_lst::tick() {
 	Timer* tmp = head->next;
 	while (tmp != tail) {
 		if (tmp->expire <= cur_time) {
-			tmp->cb_func(&tmp->data);
+			tmp->cb_func(tmp->data);
+			del_timer(tmp);
 		} else {
 			break;
 		}
@@ -67,7 +68,7 @@ void Timer_lst::add_timer(Timer* timer) {
 }
 
 void Timer_lst::del_timer(Timer* timer) {
-	if (!timer) {
+	if (!timer || timer == head || timer == tail) {
 		return ;
 	}
 	timer->prev->next = timer->next;

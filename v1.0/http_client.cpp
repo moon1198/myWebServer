@@ -105,10 +105,14 @@ bool Http_client::Read() {
 			break;
 			//disconnect
 		} else if(len == 0){
+			//break;
 			return false;
 		}
 		m_read_idx += len;
 	}
+	//if (m_read_idx == 0) {
+	//	return false;
+	//}
 
 	m_readbuf[m_read_idx] = '\0';
 
@@ -118,7 +122,7 @@ bool Http_client::Read() {
 bool Http_client::Write() {
 
 	if (bytes_to_write == 0) {
-
+		return false;
 	}
 
 	while (1) {
@@ -384,8 +388,8 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	strcpy(m_file, m_root_path);
 	strcat(m_file, "/root");
 	if (strlen(m_url) == 1 && m_url[0] == '/') {
-		//strcat(m_file, "/judge.html");
-		strcat(m_file, "/index.html");
+		strcat(m_file, "/judge.html");
+		//strcat(m_file, "/index.html");
 	} else {
 		switch (*(m_url + 1)) {
 		case '0':
