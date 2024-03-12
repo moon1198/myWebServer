@@ -85,7 +85,6 @@ void Http_client::run() {
 	if (!fill_writebuf(parse_ret)) {
 		//writebuf full out
 		close_conn();
-		return ;
 	}
 
 	modfd(m_epollfd, m_fd, EPOLLOUT, true);
@@ -124,6 +123,8 @@ bool Http_client::Write() {
 	if (bytes_to_write == 0) {
 		return false;
 	}
+
+	//printf("write m_file : %s\n\n", m_file);
 
 	while (1) {
 		int len = writev(m_fd, write_iov, m_iov_count);
@@ -170,6 +171,7 @@ bool Http_client::Write() {
 
 Http_client::HTTP_CODE Http_client::parse_readbuf() {
 	char* text = m_readbuf;
+	assert(write(1, text, 50) >= 0);
 	check_state = CHECK_STATE_REQUESTLINE;
 	Http_client::HTTP_CODE ret = NO_REQUEST;
 	while (preprocess_line(text) == LINE_OK) {
@@ -220,6 +222,7 @@ bool Http_client::fill_writebuf(Http_client::HTTP_CODE request_state) {
 		break;
 	case NO_RESOURCE:
 		//error_404
+		return false;
 		add_status_line(404, error_404_title);
 		add_headers(strlen(error_404_form));
 		add_content(error_404_form);
@@ -242,6 +245,7 @@ bool Http_client::fill_writebuf(Http_client::HTTP_CODE request_state) {
 		break;
 	default:
 		//will be not reach here
+		return false;
 		break;
 	}
 	if (m_file_address) {
@@ -287,6 +291,9 @@ Http_client::LINE_STATUS Http_client::preprocess_line(char *line) {
 }
 
 Http_client::HTTP_CODE Http_client::parse_requestline(char* line) {
+
+	//printf("requestline : %s\n", line);
+
 	char* tmp = NULL;
 	char* url;
 	//确定“ ” 或者“\t“位置
@@ -322,6 +329,9 @@ Http_client::HTTP_CODE Http_client::parse_requestline(char* line) {
 
 	//strcpy(m_url, url);
 	m_url = url;
+
+	//printf("m_url : %s\n", m_url);
+
 	tmp += strspn(tmp, " \t");
 	if (strcasecmp(tmp, "HTTP/1.1") == 0) {
 		//strcpy(m_version, tmp);
@@ -387,9 +397,11 @@ Http_client::HTTP_CODE Http_client::parse_content(char* text) {
 Http_client::HTTP_CODE Http_client::handle_request() {
 	strcpy(m_file, m_root_path);
 	strcat(m_file, "/root");
+	
+
 	if (strlen(m_url) == 1 && m_url[0] == '/') {
-		strcat(m_file, "/judge.html");
-		//strcat(m_file, "/index.html");
+		//strcat(m_file, "/judge.html");
+		strcat(m_file, "/index.html");
 	} else {
 		switch (*(m_url + 1)) {
 		case '0':
@@ -408,10 +420,12 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 			strcat(m_file, "/fans.html");
 			break;
 		default:
-			strcat(m_file, m_url + 1);
+			strcat(m_file, m_url);
 			break;
 		}
 	}
+
+	//printf("m_path : %s\n", m_file);
 
 	//exist or not
 	if (stat(m_file, &m_file_stat) == -1) {
@@ -428,6 +442,7 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	int fd = open(m_file, O_RDONLY);
 	assert(fd > 0);
 
+	//printf("m_file : %s\n", m_file);
 	m_file_address = (char *) mmap(NULL, m_file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	close(fd);
 	return FILE_REQUEST;
@@ -510,4 +525,6 @@ void Http_client::unmap() {
 void Http_client::close_conn() {
 	delfd(m_epollfd, m_fd);
 	close(m_fd);
+	m_fd = -1;
+	m_user_num --;
 }

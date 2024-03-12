@@ -4,6 +4,7 @@
 #include "threadpool/threadpool.h"
 #include "lock/locker.h"
 #include "timer/lst_timer.h"
+#include "log/log.h"
 #include "http_client.h"
 
 
@@ -39,7 +40,7 @@ public:
 	static void cb_func(client_data* data);
 	void prolong_timer(Timer*);
 	void timer_deal_err(Timer*);
-
+	void log_write();
 
 public:
 	//Config m_config;
@@ -56,6 +57,10 @@ public:
 	//定时器里也需要连接数据
 	Timer_lst* m_timer_lst;
 	client_data* m_timer_data;
+
+	//log
+	int m_close_log;	//close or not
+	int m_async;		//async or not
 
 private:
 

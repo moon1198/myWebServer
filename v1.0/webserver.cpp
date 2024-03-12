@@ -35,6 +35,12 @@ WebServer::~WebServer() {
 void WebServer::init(int port = 9006, int thread_num = 8) {
 	m_port = port;
 	m_thread_num = thread_num;
+
+
+	m_close_log = 0;
+	m_async = 0;
+
+
 }
 
 void WebServer::timer_lst_init() {
@@ -46,6 +52,15 @@ void WebServer::threadpool_init() {
 	m_threadpool = new Threadpool<Http_client>(m_thread_num);
 	assert(m_threadpool != NULL);
 	users = new Http_client[MAX_FD];
+}
+
+void WebServer::log_write() {
+	if (0 == m_close_log) {
+		if (1 == m_async)
+			Log::get_instance()->init("./Serverlog", false, 800000, 800);
+		else
+			Log::get_instance()->init("./Serverlog", false, 800000, 0);
+	}
 }
 
 void WebServer::event_listen() {
@@ -144,6 +159,7 @@ void WebServer::event_loop() {
 
 				users[peer_fd].new_user(peer_fd, (struct sockaddr_in*) &peer_addr);
 				new_timer(peer_fd, (struct sockaddr_in*) &peer_addr);
+				LOG_INFO("connect to %d", peer_fd);
 				continue;
 			}
 
