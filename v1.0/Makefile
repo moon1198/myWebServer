@@ -5,6 +5,7 @@ CXX = g++
 CXXFLAGS += -O2
 CXXFLAGS += -g
 CXXFLAGS += -lpthread
+CXXFLAGS += -lmysqlclient
 
 SRC = *.cpp
 INC_PATH := ./include
