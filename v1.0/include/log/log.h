@@ -2,7 +2,9 @@
 #define _LOG_H__
 
 #include "lock/locker.h"
+#include "log/block_queue.h"
 #include <cstdio>
+#include <string>
 
 class Log
 {
@@ -12,8 +14,10 @@ class Log
 			static Log instance;
 			return &instance;
 		}
+		static void* flush_log_thread(void* );
 		bool init(const char*, bool, int, int max_queue_size = 0, int buf_size = 512);
 		void write_log(int level, const char* format, ...);
+		void async_write();
 		void flush();
 
 	private:
@@ -22,6 +26,8 @@ class Log
 
 		bool m_is_async;
 		bool m_close;
+		Block_queue<std::string>* block_queue;
+
 
 		int m_count;
 		int m_line_max;

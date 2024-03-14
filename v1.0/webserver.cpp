@@ -38,7 +38,7 @@ void WebServer::init(int port = 9006, int thread_num = 8) {
 
 
 	m_close_log = 0;
-	m_async = 0;
+	m_async = 1;
 
 
 }
@@ -135,6 +135,7 @@ void WebServer::event_loop() {
 		//alarm 使epoll_wait return -1
 		if (event_num == -1) {
 			if (errno == EINTR) {
+				LOG_ERROR("%s", "epoll failure");
 				continue;
 			} else {
 				assert(0);
@@ -149,15 +150,19 @@ void WebServer::event_loop() {
 			//new connection request
 			if (sockfd == m_lisfd) {
 				
+				if (Http_client::m_user_num + 1 >= MAX_FD) {
+					LOG_ERROR("Too many connection");
+					continue;
+				}
 				struct sockaddr peer_addr;
 				socklen_t peer_addr_len = sizeof(peer_addr);
 				int peer_fd = accept(m_lisfd, &peer_addr, &peer_addr_len);
-				if (Http_client::m_user_num >= MAX_FD) {
-					std::cout << "fd connection too busy!" << std::endl;
-					continue;
+				if (peer_fd < 0) {
+					LOG_ERROR("%s: errno is %d", "accept error", errno);
+					break;
 				}
 
-				users[peer_fd].new_user(peer_fd, (struct sockaddr_in*) &peer_addr);
+				users[peer_fd].new_user(peer_fd, (struct sockaddr_in*) &peer_addr, m_close_log);
 				new_timer(peer_fd, (struct sockaddr_in*) &peer_addr);
 				LOG_INFO("connect to %d", peer_fd);
 				continue;
@@ -169,6 +174,7 @@ void WebServer::event_loop() {
 
 			else if (events[i].events & EPOLLIN) {
 				if (users[sockfd].Read()) {
+					LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_addr()->sin_addr));
 					m_threadpool->push(&users[sockfd]);
 
 					//prolong expire
@@ -187,7 +193,8 @@ void WebServer::event_loop() {
 				//std::cout << "write....." << std::endl;
 
 				if (users[sockfd].Write()) {
-					users[sockfd].close_conn();
+					LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_addr()->sin_addr));
+					//users[sockfd].close_conn();
 					//prolong expire
 					prolong_timer(m_timer_data[sockfd].timer);
 
@@ -201,6 +208,7 @@ void WebServer::event_loop() {
 		}
 		if (timeout) {
 			timer_handler();
+			LOG_INFO("%s", "timer tick");
 			timeout = false;
 		}
 
@@ -308,11 +316,13 @@ void WebServer::prolong_timer(Timer* timer) {
 	time_t cur = time(NULL);
 	timer->expire = cur + 3 * TIMESLOT;
 	m_timer_lst->adjust_timer(timer);
+	LOG_INFO("%s", "adjust timer once");
 }
 
 void WebServer::timer_deal_err(Timer* timer) {
 	timer->cb_func(timer->data);
 	if (timer) {
+		LOG_INFO("close fd %d", timer->data->m_sockfd);
 		m_timer_lst->del_timer(timer);
 	}
 }

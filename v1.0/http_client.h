@@ -1,6 +1,7 @@
 #ifndef __HTTP_CLIENT_H_
 #define __HTTP_CLIENT_H_
 
+#include "log/log.h"
 #include <cstddef>
 #include <cstring>
 #include <unistd.h>
@@ -21,8 +22,8 @@ class Http_client
 public:
 	Http_client() : m_peer_addr(NULL) {};
 	~Http_client(){};
-	void init(int fd, const struct sockaddr_in *peer_addr);
-	void new_user(int fd, const struct sockaddr_in *peer_addr);
+	void init(int fd, const struct sockaddr_in *peer_addr, int close_log);
+	void new_user(int fd, const struct sockaddr_in *peer_addr, int close_log);
 	void close_conn();
 
 	enum METHOD {GET = 0, POST, HEAD, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH};
@@ -53,8 +54,10 @@ public:
 	static int m_epollfd;
 	static int m_user_num;
 	int m_fd;
+	int m_close_log;
 
 
+	const struct sockaddr_in* get_addr();
 	bool Read();
 	bool Write();
 	void run ();

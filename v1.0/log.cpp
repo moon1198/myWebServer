@@ -9,7 +9,8 @@
 //time : type info : content
 //
 
-Log::Log() : m_count(0), m_today(-1), m_fp(NULL) {
+Log::Log() : block_queue(NULL), m_count(0), m_today(-1), m_fp(NULL){
+
 
 }
 
@@ -17,17 +18,20 @@ Log::~Log() {
 	if (m_fp != NULL) {
 		fclose(m_fp);
 	}
+	if (block_queue != NULL) {
+		delete block_queue;
+	}
 }
 
 bool Log::init(const char* file_name, bool close_log, int line_max, int max_queue_size, int buf_size) {
 	if (max_queue_size > 0) {
-		//m_is_async = true;
-		//m_log_queue = new Block_queue<string>(max_queue_size);
+		m_is_async = true;
+		block_queue = new Block_queue<std::string>(max_queue_size);
 
-		////由多个htpp连接线程，生产log队列， 由此线程处理log队列
-		////为多生产者-单消费者模型
-		//pthread_t tid;
-		//pthread_create(&tid, NULL, flush_log_thread, NULL);
+		//由多个htpp连接线程，生产log队列， 由此线程处理log队列
+		//为多生产者-单消费者模型
+		pthread_t tid;
+		pthread_create(&tid, NULL, flush_log_thread, NULL);
 	}
 
 	m_close = close_log;
@@ -64,10 +68,10 @@ void Log::write_log(int level,const char* format, ...) {
 			snprintf(head, 32, "[Debug]: ");
 			break;
 		case 1:
-			snprintf(head, 32, "[Warn]: ");
+			snprintf(head, 32, "[Info]: ");
 			break;
 		case 2:
-			snprintf(head, 32, "[Info]: ");
+			snprintf(head, 32, "[Warn]: ");
 			break;
 		case 3:
 			snprintf(head, 32, "[Error]: ");
@@ -122,7 +126,7 @@ void Log::write_log(int level,const char* format, ...) {
 	//m_queue is full or not
 	//if (m_is_async || !m_log_queue->full) {
 	if (m_is_async) {
-		//m_log_queue->push(log_buf);
+		block_queue->push(log_buf);
 	} else {
 		m_locker.lock();
 		fputs(log_buf, m_fp);
@@ -136,3 +140,27 @@ void Log::flush() {
 	fflush(m_fp);
 	m_locker.unlock();
 }
+
+void* Log::flush_log_thread(void* args) {
+	Log::get_instance()->async_write();
+	return NULL;
+}
+
+void Log::async_write() {
+	std::string tmp;
+	while (1) {
+		tmp = block_queue->pop();
+		m_locker.lock();
+		fputs(tmp.c_str(), m_fp);
+		m_locker.unlock();
+	}
+}
+
+
+
+
+
+
+
+
+

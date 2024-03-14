@@ -36,10 +36,11 @@ void setnonblock(int fd);
 void addfd(int epollfd, int fd, bool one_shot);
 void delfd(int epollfd, int fd);
 
-void Http_client::init(int fd, const struct sockaddr_in *peer_addr) {
+void Http_client::init(int fd, const struct sockaddr_in *peer_addr, int close_log) {
 	assert(getcwd(m_root_path, 256) != NULL);
 	m_fd = fd;
 	m_peer_addr = peer_addr;
+	m_close_log = close_log;
 	refresh();
 }
 void Http_client::refresh() {
@@ -69,8 +70,8 @@ void Http_client::refresh() {
 	bytes_have_write = 0;
 }
 
-void Http_client::new_user(int fd, const struct sockaddr_in *peer_addr) {
-	init(fd, peer_addr);
+void Http_client::new_user(int fd, const struct sockaddr_in *peer_addr, int close_log) {
+	init(fd, peer_addr, close_log);
 	addfd(m_epollfd, fd, true);
 }
 
@@ -171,10 +172,11 @@ bool Http_client::Write() {
 
 Http_client::HTTP_CODE Http_client::parse_readbuf() {
 	char* text = m_readbuf;
-	assert(write(1, text, 50) >= 0);
+	//assert(write(1, text, 50) >= 0);
 	check_state = CHECK_STATE_REQUESTLINE;
 	Http_client::HTTP_CODE ret = NO_REQUEST;
 	while (preprocess_line(text) == LINE_OK) {
+		LOG_INFO("%s", text + m_start_idx);
 		switch (check_state) {
 			case CHECK_STATE_REQUESTLINE :
 				ret = parse_requestline(text + m_start_idx);
@@ -376,6 +378,7 @@ Http_client::HTTP_CODE Http_client::parse_headers(char* line) {
 	} else if (strcasecmp(line, "Content-Length:") == 0) {
 		m_content_len = atoi(tmp);
 	} else {
+		LOG_INFO("unknow header: %s", line);
 		//跳过不需要的属性
 		return NO_REQUEST;
 	}
@@ -400,8 +403,8 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	
 
 	if (strlen(m_url) == 1 && m_url[0] == '/') {
-		//strcat(m_file, "/judge.html");
-		strcat(m_file, "/index.html");
+		strcat(m_file, "/judge.html");
+		//strcat(m_file, "/index.html");
 	} else {
 		switch (*(m_url + 1)) {
 		case '0':
@@ -527,4 +530,8 @@ void Http_client::close_conn() {
 	close(m_fd);
 	m_fd = -1;
 	m_user_num --;
+}
+
+const struct sockaddr_in* Http_client::get_addr() {
+	return m_peer_addr;
 }
