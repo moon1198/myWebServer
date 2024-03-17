@@ -2,6 +2,7 @@
 #define __HTTP_CLIENT_H_
 
 #include "log/log.h"
+#include "sqlpool/sqlpool.h"
 #include <cstddef>
 #include <cstring>
 #include <unistd.h>
@@ -22,6 +23,7 @@ class Http_client
 public:
 	Http_client() : m_peer_addr(NULL) {};
 	~Http_client(){};
+	void initmysql_cookies(Sqlpool *conn_pool);
 	void init(int fd, const struct sockaddr_in *peer_addr, int close_log);
 	void new_user(int fd, const struct sockaddr_in *peer_addr, int close_log);
 	void close_conn();
@@ -74,6 +76,7 @@ private:
 						//
 	//parse result
 	METHOD m_method;
+	int m_cgi;
 	int m_content_len;
 	char* m_url;
 	char* m_host;

@@ -14,7 +14,7 @@ public:
 	static Sqlpool* get_instance();
 
 	void init(std::string dbname, std::string url, int port, std::string user,
-		   	std::string passward, int max_conn, int close_log);
+		   	std::string password, int max_conn, int close_log);
 
 	MYSQL* get_conn();
 	bool release_conn(MYSQL* );
@@ -31,7 +31,7 @@ private:
 	std::string m_url;
 	unsigned m_port;
 	std::string m_user;
-	std::string m_passward;
+	std::string m_password;
 	std::string m_dbname;
 	int m_close_log;
 	

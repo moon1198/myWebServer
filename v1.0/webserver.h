@@ -29,6 +29,8 @@ public:
 	//attribute setting 
 	void init(int, int);
 	void threadpool_init();
+	//void sql_init(std::string dbname, std::string url, int port, std::string user, std::string password, int max_conn, int close_log);
+	void sql_init();
 	void timer_lst_init();
 	void event_listen();
 	void event_loop();
@@ -63,6 +65,12 @@ public:
 	int m_async;		//async or not
 
 private:
+	std::string m_dbname;
+	std::string m_url;
+	int m_sqlport;
+	std::string m_user;
+	std::string m_password;
+	int m_max_sqlconn;
 
 };
 

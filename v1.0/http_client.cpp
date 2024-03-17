@@ -14,6 +14,7 @@
 #include <assert.h>
 
 #include <iostream>
+#include <map>
 
 //定义http响应的一些状态信息
 static const char *ok_200_title = "OK";
@@ -31,10 +32,36 @@ static const char *error_500_form = "There was an unusual problem serving the re
 int Http_client::m_epollfd = -1;
 int Http_client::m_user_num = 0;
 
+//all user threads will contend this lock
+Locker locker;
+std::map<std::string, std::string> m_cookie;
+
 void modfd(int epollfd, int m_fd, int ev, bool one_shot);
 void setnonblock(int fd);
 void addfd(int epollfd, int fd, bool one_shot);
 void delfd(int epollfd, int fd);
+
+//exec once at init
+void Http_client::initmysql_cookies(Sqlpool *conn_pool) {
+	MYSQL *mysql = NULL;
+	ConnectionRALL mysqlcon(&mysql, conn_pool);
+
+	if (mysql_query(mysql, "SELECT username, passwd FROM user")) {
+
+	}
+	MYSQL_RES *result = mysql_store_result(mysql);
+	//the col of table
+	//int num_field = mysql_num_fields(result);
+	//字段属性
+	//MYSQL_FIELD *fields = mysql_fetch_fields(result);
+
+	//fetch the top row
+	while (MYSQL_ROW row = mysql_fetch_row(result)) {
+		std::string temp1(row[0]);
+		std::string temp2(row[1]);
+		m_cookie[temp1] = temp2;
+	}
+}
 
 void Http_client::init(int fd, const struct sockaddr_in *peer_addr, int close_log) {
 	assert(getcwd(m_root_path, 256) != NULL);
@@ -48,7 +75,8 @@ void Http_client::refresh() {
 	m_check_idx = 0;	//location of preprocess_line
 	m_start_idx = 0;	//location of parsing
 	
-	//METHOD m_method ;
+	m_method = GET;
+	m_cgi = 0;
 	m_url = NULL;
 	m_version = NULL;
 	m_host = NULL;
@@ -172,10 +200,13 @@ bool Http_client::Write() {
 
 Http_client::HTTP_CODE Http_client::parse_readbuf() {
 	char* text = m_readbuf;
+	//printf("%s", text);
 	//assert(write(1, text, 50) >= 0);
 	check_state = CHECK_STATE_REQUESTLINE;
 	Http_client::HTTP_CODE ret = NO_REQUEST;
-	while (preprocess_line(text) == LINE_OK) {
+
+	LINE_STATUS line_status = LINE_OK;
+	while ((check_state == CHECK_STATE_CONTENT && line_status == LINE_OK)|| ((line_status = preprocess_line(text)) == LINE_OK)) {
 		LOG_INFO("%s", text + m_start_idx);
 		switch (check_state) {
 			case CHECK_STATE_REQUESTLINE :
@@ -195,7 +226,7 @@ Http_client::HTTP_CODE Http_client::parse_readbuf() {
 				break;
 			case CHECK_STATE_CONTENT :
 
-				ret = parse_content(text + m_start_idx);
+				ret = parse_content(text + m_start_idx + 2);
 				if (ret == BAD_REQUEST) {
 					return BAD_REQUEST;
 				} else if (ret == GET_REQUEST) {
@@ -309,6 +340,7 @@ Http_client::HTTP_CODE Http_client::parse_requestline(char* line) {
 		m_method = GET;
 	} else if (strcasecmp(line, "POST") == 0) {
 		m_method = POST;
+		m_cgi = 1;
 	}else {
 		return BAD_REQUEST;
 	}
@@ -389,6 +421,7 @@ Http_client::HTTP_CODE Http_client::parse_headers(char* line) {
 
 Http_client::HTTP_CODE Http_client::parse_content(char* text) {
 	//判断报文内容是否全部收到
+	//printf("this is content");
 	if (m_read_idx >= (m_check_idx + m_content_len)) {
 		text[m_content_len] = '\0';
 		m_content = text;
@@ -401,6 +434,64 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	strcpy(m_file, m_root_path);
 	strcat(m_file, "/root");
 	
+	if (m_cgi == 1 && (m_url[1] == '2' || m_url[1] == '3')) {
+
+		//get the user name and password;
+		char name[100], password[100];
+		int i = 0;
+		for (i = 5; m_content[i] != '&'; ++ i) {
+			name[i - 5] = m_content[i];
+		}
+		//so important to add '\0'
+		name[i - 5] = '\0';
+
+		int j = 0;
+		for (i += 10; m_content[i] != '\0'; ++ i, ++ j) {
+			password[j] = m_content[i];
+		}
+		password[j] = '\0';
+
+		//judge the post is register or log;
+		if (m_url[1] == '2') {
+			//log
+			//printf("%s   %s\n", name, m_cookie[name].c_str());
+			//printf("%s   %s\n", name, m_cookie["jang"].c_str());
+			//printf("%d\n", strcmp(name, m_cookie[name].c_str()));
+			if (m_cookie.find(std::string(name)) != m_cookie.end() && m_cookie[name] == password) {
+
+				strcat(m_file, "/welcome.html");
+		   	} else {
+				//this user is not exist or password is wrong;
+				strcat(m_file, "/logError.html");
+			}
+		}
+		if (m_url[1] == '3') {
+			//register
+			if (m_cookie.find(name) == m_cookie.end()) {
+				char sql_insert[200]; 
+				snprintf(sql_insert, 200 - 1, "INSERT INTO user(username, passwd) VALUES('%s', '%s')", name, password);
+
+				MYSQL *mysql = NULL;
+				ConnectionRALL mysqlcon(&mysql, Sqlpool::get_instance());
+
+				locker.lock();
+				int res = mysql_query(mysql, sql_insert);
+				m_cookie.insert(std::pair<std::string, std::string>(name, password));
+				locker.unlock();
+
+				if (!res) {
+					strcat(m_file, "/log.html");
+				} else {
+					strcat(m_file, "/registerError.html");
+				}
+
+			} else {
+				strcat(m_file, "/registerError.html");
+			}
+
+		}
+		goto file_check;
+	}
 
 	if (strlen(m_url) == 1 && m_url[0] == '/') {
 		strcat(m_file, "/judge.html");
@@ -431,6 +522,7 @@ Http_client::HTTP_CODE Http_client::handle_request() {
 	//printf("m_path : %s\n", m_file);
 
 	//exist or not
+file_check:
 	if (stat(m_file, &m_file_stat) == -1) {
 		return NO_RESOURCE;
 	}

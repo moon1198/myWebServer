@@ -36,10 +36,15 @@ void WebServer::init(int port = 9006, int thread_num = 8) {
 	m_port = port;
 	m_thread_num = thread_num;
 
+	m_dbname = "webdb";
+	m_url = "localhost";
+	m_user = "debian-sys-maint";
+	m_password = "sOQNiW4vRl75vRU8";
+	m_max_sqlconn = 8;
+	m_sqlport = 9007;
 
 	m_close_log = 0;
 	m_async = 1;
-
 
 }
 
@@ -52,6 +57,13 @@ void WebServer::threadpool_init() {
 	m_threadpool = new Threadpool<Http_client>(m_thread_num);
 	assert(m_threadpool != NULL);
 	users = new Http_client[MAX_FD];
+}
+
+//void WebServer::sql_init(string dbname, string url, int port, string user, string password,
+					//int max_conn, int close_log) {
+void WebServer::sql_init(){
+	Sqlpool *m_connPool = Sqlpool::get_instance();
+	m_connPool->init(m_dbname, m_url, m_sqlport, m_user, m_password, m_max_sqlconn, m_close_log); users->initmysql_cookies(m_connPool);
 }
 
 void WebServer::log_write() {

@@ -17,13 +17,13 @@ Sqlpool* Sqlpool::get_instance() {
 	return &instance;
 }
 
-void Sqlpool::init(string dbname, string url, int port, string user, string passward,
+void Sqlpool::init(string dbname, string url, int port, string user, string password,
 					int max_conn, int close_log) {
 	m_dbname = dbname;
 	m_url = url;
 	m_port = port;
 	m_user = user;
-	m_passward = passward;
+	m_password = password;
 	m_close_log = close_log;
 
 	for (int i = 0; i < max_conn; ++ i) {
@@ -35,7 +35,7 @@ void Sqlpool::init(string dbname, string url, int port, string user, string pass
 			continue;
 		}
 
-		mysql_real_connect(tmp_conn, m_url.c_str(), m_user.c_str(), m_passward.c_str(),
+		mysql_real_connect(tmp_conn, m_url.c_str(), m_user.c_str(), m_password.c_str(),
 					m_dbname.c_str(), m_port, NULL, 0);
 		if (tmp_conn == NULL) {
 			LOG_ERROR("MYSQL init connection failure");
