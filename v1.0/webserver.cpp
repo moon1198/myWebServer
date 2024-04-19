@@ -112,6 +112,8 @@ void WebServer::event_listen() {
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_handler;
+	//如果一个系统调用被信号中断，那么系统会自动重新启动该系统调用，而不是中断它。
+	//这意味着进程在接收到信号后会自动恢复之前被信号中断的系统调用，并继续
 	sa.sa_flags |= SA_RESTART;
 	sigfillset(&sa.sa_mask);
 	ret = sigaction(SIGALRM, &sa, NULL);
